@@ -9,9 +9,9 @@ using UnityEngine;
 
 namespace Xeon.IO
 {
-
     public class CsvParser
     {
+        private const BindingFlags ProperyFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
         public static List<Dictionary<string, string>> Parse(string path, string separator = "\t")
         {
             var encoding = EncodeHelper.GetJpEncoding(path);
@@ -69,7 +69,7 @@ namespace Xeon.IO
 
         private static void SetValue<T>(Type type, string memberName, T instance, string value)
         {
-            var fieldInfo = type.GetField(memberName, BindingFlags.NonPublic | BindingFlags.Instance);
+            var fieldInfo = type.GetField(memberName, ProperyFlags);
             if (fieldInfo.FieldType == typeof(int) && int.TryParse(value, out var intValue))
                 fieldInfo.SetValue(instance, intValue);
             else if (fieldInfo.FieldType == typeof(float) && float.TryParse(value, out var floatValue))
@@ -83,25 +83,15 @@ namespace Xeon.IO
             else if (fieldInfo.FieldType.IsEnum)
                 fieldInfo.SetValue(instance, Enum.Parse(fieldInfo.FieldType, value));
             else if (fieldInfo.FieldType == typeof(Vector2))
-            {
-                var splited = value.Split(',').Select(text => float.Parse(text)).ToList();
-                fieldInfo.SetValue(instance, new Vector2(splited[0], splited[1]));
-            }
+                fieldInfo.SetValue(instance, value.ToVector2());
             else if (fieldInfo.FieldType == typeof(Vector2Int))
-            {
-                var splited = value.Split(',').Select(text => int.Parse(text)).ToList();
-                fieldInfo.SetValue(instance, new Vector2Int(splited[0], splited[1]));
-            }
+                fieldInfo.SetValue(instance, value.ToVector2Int());
             else if (fieldInfo.FieldType == typeof(Vector3))
-            {
-                var splited = value.Split(',').Select(text => float.Parse(text)).ToList();
-                fieldInfo.SetValue(instance, new Vector3(splited[0], splited[1], splited[2]));
-            }
+                fieldInfo.SetValue(instance, value.ToVector3());
             else if (fieldInfo.FieldType == typeof(Vector3Int))
-            {
-                var splited = value.Split(',').Select(text => int.Parse(text)).ToList();
-                fieldInfo.SetValue(instance, new Vector3Int(splited[0], splited[1], splited[2]));
-            }
+                fieldInfo.SetValue(instance, value.ToVector3Int());
+            else if (fieldInfo.FieldType == typeof(Vector4))
+                fieldInfo.SetValue(instance, value.ToVector4());
             else
                 throw new Exception($"{fieldInfo.FieldType} is not supported");
         }
@@ -141,7 +131,7 @@ namespace Xeon.IO
                     if (member.MemberType == MemberTypes.Property)
                         value = type.GetProperty(member.Name).GetValue(row);
                     else if (member.MemberType == MemberTypes.Field)
-                        value = type.GetField(member.Name, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(row);
+                        value = type.GetField(member.Name, ProperyFlags).GetValue(row);
                     else
                         continue;
                     values.Add(ToString(value));
@@ -151,22 +141,24 @@ namespace Xeon.IO
             return builder.ToString();
         }
 
-        private static string ToString(object value)
+        private static string ToString(object value, string separator = ",")
         {
             if (value is Vector2 vector2)
-                return $"{vector2.x},{vector2.y}";
+                return vector2.ToCsv(separator);
             if (value is Vector3 vector3)
-                return $"{vector3.x},{vector3.y},{vector3.z}";
+                return vector3.ToCsv(separator);
             if (value is Vector2Int vector2Int)
-                return $"{vector2Int.x},{vector2Int.y}";
+                return vector2Int.ToCsv(separator);
             if (value is Vector3Int vector3Int)
-                return $"{vector3Int.x},{vector3Int.y},{vector3Int.z}";
+                return vector3Int.ToCsv(separator);
+            if (value is Vector4 vector4)
+                return vector4.ToCsv(separator);
             if (value is not string && value is IEnumerable enumerable)
             {
                 var array = new List<object>();
                 foreach (var data in enumerable)
                     array.Add(data);
-                return string.Join(",", array.ToArray());
+                return string.Join(separator, array.ToArray());
             }
             return value.ToString();
         }
@@ -176,7 +168,8 @@ namespace Xeon.IO
             var type = typeof(T);
             var attributes = new Dictionary<string, CsvColumn>();
             var members = new Dictionary<string, MemberInfo>();
-            foreach (var member in type.GetFields(BindingFlags.NonPublic | BindingFlags.Instance).Select(field => field as MemberInfo).Concat(type.GetProperties()))
+            var fields = type.GetFields(ProperyFlags).Select(field => field as MemberInfo);
+            foreach (var member in fields.Concat(type.GetProperties()))
             {
                 var csvColumn = member.GetCustomAttribute<CsvColumn>();
                 if (csvColumn == null) continue;

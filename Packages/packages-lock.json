@@ -247,7 +247,7 @@
       "url": "https://packages.unity.com"
     },
     "jp.xeon.simple_csv_parser": {
-      "version": "file:SimpleCSVParer",
+      "version": "file:SimpleCSVParser",
       "depth": 0,
       "source": "embedded",
       "dependencies": {
