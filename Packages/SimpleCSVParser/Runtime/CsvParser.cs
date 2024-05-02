@@ -222,6 +222,8 @@ namespace Xeon.IO
                 return vector3Int.ToCsv(separator);
             if (value is Vector4 vector4)
                 return vector4.ToCsv(separator);
+            if (value is Quaternion quaternion)
+                return quaternion.ToCsv(separator);
             if (value is not string && value is IEnumerable enumerable)
             {
                 var array = new List<object>();
