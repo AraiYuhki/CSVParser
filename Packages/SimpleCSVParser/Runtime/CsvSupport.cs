@@ -19,6 +19,8 @@ namespace Xeon.IO
             => Format(new object[] { value.x, value.y, value.z }, separator);
         public static string ToCsv(this Vector4 value, string separator = ",")
             => Format(new object[] { value.x, value.y, value.z, value.w }, separator);
+        public static string ToCsv(this Quaternion value, string separator = ",")
+            => Format(new object[] { value.x, value.y, value.z, value.w }, separator);
 
         public static Vector2 ToVector2(this string self, string separator = ",")
         {
@@ -65,6 +67,18 @@ namespace Xeon.IO
                 && float.TryParse(splited[2], out var z)
                 && float.TryParse(splited[3], out var w))
                 return new Vector4(x, y, z, w);
+            throw new InvalidFormatException();
+        }
+
+        public static Quaternion ToQuaternion(this string self, string separator = ",")
+        {
+            var splited = Split(self, separator);
+            if (splited.Length <= 3) throw new InvalidFormatException();
+            if (   float.TryParse(splited[0], out var x)
+                && float.TryParse(splited[1], out var y)
+                && float.TryParse(splited[2], out var z)
+                && float.TryParse(splited[3], out var w))
+                return new Quaternion(x, y, z, w);
             throw new InvalidFormatException();
         }
 

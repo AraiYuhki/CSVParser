@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace Xeon.IO
@@ -12,59 +13,125 @@ namespace Xeon.IO
     public class CsvParser
     {
         private const BindingFlags ProperyFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
-        public static List<Dictionary<string, string>> Parse(string path, string separator = "\t")
+
+        private static readonly Regex StringRegex = new Regex("(\".+\")");
+        private static readonly Regex VectorRegex = new Regex(@"(\([\d\.\,\-]+\))\,");
+
+        private string csv = null;
+        private string separator = null;
+        private Dictionary<string, string> escapedData = new();
+
+        private CsvParser(string csv, string separator)
+        {
+            this.csv = csv.Replace("\r\n", "\n").Replace("\r", "\n");
+            this.separator = separator;
+            Escape(StringRegex, "<escaped string>{0}</escaped string>");
+            Escape(VectorRegex, "<escaped vector>{0}</escaped string>");
+        }
+
+        public string GetResult() => csv;
+        public Dictionary<string, string> GetEscapedData() => escapedData;
+
+        private void Escape(Regex regex, string replaceFormat)
+        {
+            var matchData = new Dictionary<string, string>();
+            foreach (var (match, index) in regex.Matches(csv).Select((match, index) => (match, index)))
+            {
+                var matchText = match.Groups[1].Value;
+                if (escapedData.ContainsKey(matchText) || matchData.ContainsKey(matchText)) continue;
+                matchData.Add(matchText, string.Format(replaceFormat, index));
+            }
+            foreach (var (before, after) in matchData)
+            {
+                csv = csv.Replace(before, after);
+                escapedData.Add(after, before);
+            }
+            Debug.Log(csv);
+        }
+
+        public static List<T> Parse<T>(string csv, string separator = "\t") where T : CsvData, new()
+        {
+            return new CsvParser(csv, separator).Parse<T>();
+        }
+
+
+        public static List<T> ParseFile<T>(string path, string separator = "\t") where T : CsvData, new()
         {
             var encoding = EncodeHelper.GetJpEncoding(path);
-            var result = new List<Dictionary<string, string>>();
-            using (var streamReader = new StreamReader(path, encoding))
+            using (var reader = new StreamReader(path, encoding))
             {
-                var headers = streamReader.ReadLine().Trim().Split(separator);
-                while (!streamReader.EndOfStream)
-                {
-                    var line = streamReader.ReadLine().Trim();
-                    if (string.IsNullOrEmpty(line)) continue;
+                var parser = new CsvParser(reader.ReadToEnd(), separator);
+                return parser.Parse<T>();
+            }
+        }
 
-                    var columns = line.Split(separator);
-                    var row = new Dictionary<string, string>();
-                    foreach ((var key, var index) in headers.Select((key, index) => (key, index)))
-                        row[key] = columns[index];
-                    result.Add(row);
+        public List<T> Parse<T>() where T : CsvData, new()
+        {
+            var type = typeof(T);
+            var (attributes, members) = GetProperties<T>();
+            var result = new List<T>();
+            var headers = new List<string>();
+            bool isFirst = true;
+            foreach (var line in csv.Split("\n").Select(line => line.Trim()))
+            {
+                if (string.IsNullOrEmpty(line)) continue;
+                var columns = line.Split(separator);
+                if (isFirst)
+                {
+                    headers = columns.ToList();
+                    isFirst = false;
+                    continue;
                 }
+                var parsed = headers.Select((key, index) => (key, columns[index])).ToDictionary(pair => pair.key, pair => pair.Item2);
+                var instance = CreateInstance<T>(attributes, members, type, parsed);
+                result.Add(instance);
             }
             return result;
         }
 
-        public static List<T> Parse<T>(string path, string separator = "\t") where T : CsvData, new()
+        private static (Dictionary<string, CsvColumn> attributes, Dictionary<string, MemberInfo> members) GetProperties<T>()
         {
-            var parsed = Parse(path, separator);
             var type = typeof(T);
-            (var attributes, var members) = GetProperties<T>();
-            var result = new List<T>();
-            foreach (var row in parsed)
+            var attributes = new Dictionary<string, CsvColumn>();
+            var members = new Dictionary<string, MemberInfo>();
+            var fields = type.GetFields(ProperyFlags).Select(field => field as MemberInfo);
+            foreach (var member in fields.Concat(type.GetProperties()))
             {
-                var instance = new T();
-                foreach (var pair in row)
-                {
-                    if (!attributes.ContainsKey(pair.Key) || !members.ContainsKey(pair.Key)) continue;
-                    var member = members[pair.Key];
-                    try
-                    {
-                        if (member.MemberType == MemberTypes.Property)
-                            type.GetProperty(member.Name).SetValue(instance, pair.Value);
-                        else if (member.MemberType == MemberTypes.Field)
-                            SetValue(type, member.Name, instance, pair.Value);
-                        else
-                            Debug.LogError($"{pair.Key} is not property or field");
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.LogException(e);
-                    }
-                }
-                instance.Initialize();
-                result.Add(instance);
+                var csvColumn = member.GetCustomAttribute<CsvColumn>();
+                if (csvColumn == null) continue;
+                attributes.Add(csvColumn.Name, csvColumn);
+                members.Add(csvColumn.Name, member);
             }
-            return result;
+            return (attributes, members);
+        }
+
+        private T CreateInstance<T>(Dictionary<string, CsvColumn> attributes, Dictionary<string, MemberInfo> members,
+            Type type, Dictionary<string, string> row)
+            where T : CsvData, new()
+        {
+            var instance = new T();
+            foreach (var (key, value) in row)
+            {
+                var text = value;
+                if (escapedData.ContainsKey(text)) text = escapedData[text];
+                if (!attributes.ContainsKey(key) || !members.ContainsKey(key)) continue;
+                var member = members[key];
+                try
+                {
+                    if (member.MemberType == MemberTypes.Property)
+                        type.GetProperty(member.Name).SetValue(instance, text);
+                    else if (member.MemberType == MemberTypes.Field)
+                        SetValue(type, member.Name, instance, text);
+                    else
+                        Debug.LogError($"{key} is not property or field");
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
+                }
+            }
+            instance.Initialize();
+            return instance;
         }
 
         private static void SetValue<T>(Type type, string memberName, T instance, string value)
@@ -77,7 +144,7 @@ namespace Xeon.IO
             else if (fieldInfo.FieldType == typeof(bool) && bool.TryParse(value, out var boolValue))
                 fieldInfo.SetValue(instance, boolValue);
             else if (fieldInfo.FieldType == typeof(string))
-                fieldInfo.SetValue(instance, value);
+                fieldInfo.SetValue(instance, value.Trim('"'));
             else if (fieldInfo.FieldType.IsGenericType && fieldInfo.FieldType.GetGenericTypeDefinition() == typeof(List<>))
                 SetArrayValue(fieldInfo, instance, value);
             else if (fieldInfo.FieldType.IsEnum)
@@ -109,7 +176,7 @@ namespace Xeon.IO
             else if (type == typeof(bool))
                 fieldInfo.SetValue(instance, splited.Select(data => bool.Parse(data)).ToList());
             else if (type == typeof(string))
-                fieldInfo.SetValue(instance, splited.ToList());
+                fieldInfo.SetValue(instance, splited.Select(data => data.Trim('"')).ToList());
             else if (type.IsEnum)
                 fieldInfo.SetValue(instance, splited.Select(data => Enum.Parse(type, data)).ToList());
             else
@@ -143,6 +210,8 @@ namespace Xeon.IO
 
         private static string ToString(object value, string separator = ",")
         {
+            if (value is string)
+                return $"\"{value}\"";
             if (value is Vector2 vector2)
                 return vector2.ToCsv(separator);
             if (value is Vector3 vector3)
@@ -161,22 +230,6 @@ namespace Xeon.IO
                 return string.Join(separator, array.ToArray());
             }
             return value.ToString();
-        }
-
-        private static (Dictionary<string, CsvColumn> attributes, Dictionary<string, MemberInfo> members) GetProperties<T>()
-        {
-            var type = typeof(T);
-            var attributes = new Dictionary<string, CsvColumn>();
-            var members = new Dictionary<string, MemberInfo>();
-            var fields = type.GetFields(ProperyFlags).Select(field => field as MemberInfo);
-            foreach (var member in fields.Concat(type.GetProperties()))
-            {
-                var csvColumn = member.GetCustomAttribute<CsvColumn>();
-                if (csvColumn == null) continue;
-                attributes.Add(csvColumn.Name, csvColumn);
-                members.Add(csvColumn.Name, member);
-            }
-            return (attributes, members);
         }
     }
 }
