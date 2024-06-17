@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -134,19 +133,9 @@ namespace Xeon.IO
                     isFirst = false;
                     continue;
                 }
-                try
-                {
-                    var parsed = headers.Select((key, index) => (key, columns[index])).ToDictionary(pair => pair.key, pair => pair.Item2);
-                    var instance = CreateInstance<T>(attributes, members, type, parsed);
-                    result.Add(instance);
-                }catch(Exception e)
-                {
-                    Debug.LogException(e);
-                    Debug.LogError(string.Join(",", headers));
-                    Debug.LogError(string.Join(",", columns));
-                    foreach (var (key, data) in escapedData)
-                        Debug.LogError($"{key}:{data}");
-                }
+                var parsed = headers.Select((key, index) => (key, columns[index])).ToDictionary(pair => pair.key, pair => pair.Item2);
+                var instance = CreateInstance<T>(attributes, members, type, parsed);
+                result.Add(instance);
             }
             return result;
         }
@@ -240,6 +229,7 @@ namespace Xeon.IO
             var fieldInfo = type.GetField(memberName, ProperyFlags);
             value = Restore(value, "string");
             value = Restore(value, "object");
+            value = Restore(value, "vector");
             value = Restore(value, "list");
             if (fieldInfo.FieldType.GetInterface(nameof(ICsvSupport)) != null)
             {

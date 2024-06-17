@@ -22,6 +22,7 @@ public class CsvParseTest
         public static Regex EscapeRegex => new Regex(@"({{.+}})");
         public int id;
         public string name;
+        public Vector3 position = Vector3.zero;
 
         public override bool Equals(object obj)
         {
@@ -29,17 +30,26 @@ public class CsvParseTest
                 return false;
             if (string.IsNullOrEmpty(name) && string.IsNullOrEmpty(other.name))
                 return id == other.id;
-            return id == other.id && name == other.name;
+            return id == other.id && name == other.name && position == other.position;
         }
 
         public string ToCsv(string separator = ",")
         {
             var name = $"\"{this.name}\"";
-            return $"{{{string.Join(separator, id, name)}}}";
+            return $"{{{string.Join(separator, id, name, position)}}}";
         }
         public void FromCsv(string csv)
         {
             var tmp = csv.Trim('{', '}');
+            var match = Regex.Match(tmp, @"(\([\d\s\.\,\-]+\))");
+            if (!match.Success)
+                throw new InvalidDataException($"position param is ignore format. {csv}");
+            
+            tmp = tmp.Replace($",{match.Value}", "");
+
+            var values = match.Value.Trim('(', ')').Split(',');
+            position = new Vector3(float.Parse(values[0]), float.Parse(values[1]), float.Parse(values[2]));
+
             var splited = tmp.Split(',');
             id = int.Parse(splited[0]);
             name = string.Join(",", splited.Skip(1).Select(text => text.Trim('"')));
@@ -177,12 +187,12 @@ public class CsvParseTest
         var obj = new List<TestData2>(){
             new TestData2() {
                 listValue = new() { "abd", "xeon", "tesst" },
-                classValue = new TestValue() { id = -1, name = "TestValue" }
+                classValue = new TestValue() { id = -1, name = "TestValue" , position = new Vector3(10.2f, -20.3f, 0) },
             },
             new TestData2()
             {
                 listValue = new(){"array1,array2", "test"},
-                classValue = new TestValue(){id = 10, name = "test,test2"}
+                classValue = new TestValue(){id = 10, name = "test,test2", position = new Vector3(1f, 2f, 3f) }
             },
             new TestData2()
             {
@@ -192,9 +202,9 @@ public class CsvParseTest
         };
 
         var csvExpect = @"list_value,class_value
-[""abd"",""xeon"",""tesst""],{-1,""TestValue""}
-[""array1,array2"",""test""],{10,""test,test2""}
-[],{0,""""}
+[""abd"",""xeon"",""tesst""],{-1,""TestValue"",(10.20, -20.30, 0.00)}
+[""array1,array2"",""test""],{10,""test,test2"",(1.00, 2.00, 3.00)}
+[],{0,"""",(0.00, 0.00, 0.00)}
 ";
         var csv = CsvParser.ToCSV(obj, ",");
         Assert.That(csv == csvExpect);
