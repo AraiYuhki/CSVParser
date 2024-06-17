@@ -229,7 +229,7 @@ namespace Xeon.IO
                 var array = new List<object>();
                 foreach (var data in enumerable)
                     array.Add(data);
-                return string.Join(separator, array.ToArray());
+                return $"[{string.Join(separator, array.ToArray())}]";
             }
             return value.ToString();
         }
