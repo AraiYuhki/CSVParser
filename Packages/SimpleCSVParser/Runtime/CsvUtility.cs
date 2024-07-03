@@ -1,6 +1,4 @@
-using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Text.RegularExpressions;
 
@@ -9,11 +7,6 @@ namespace Xeon.IO
     public delegate string EscapeFunction(string csv, Dictionary<string, string> escapedData);
     public static class CsvUtility
     {
-        private static readonly Regex VectorRegex = new Regex(@"(\([\d\s\.\,\-]+\))");
-        private static readonly Regex ListRegex = new Regex(@"(\[.+\])\,?");
-        private static readonly Regex ObjectRegex = new Regex(@"({.+})");
-
-
         private static List<EscapeFunction> EscapeFunctions = new()
         {
             EscapeString,

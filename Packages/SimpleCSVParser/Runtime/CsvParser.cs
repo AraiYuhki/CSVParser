@@ -11,7 +11,11 @@ namespace Xeon.IO
     public class CsvParser
     {
         private const BindingFlags ProperyFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
-
+        private static readonly Type[] VectorTypes = new Type[]
+        {
+            typeof(Vector2), typeof(Vector3), typeof(Vector4),
+            typeof(Vector2Int), typeof(Vector3Int), typeof(Quaternion)
+        };
         private string csv = null;
         private string separator = null;
         private Dictionary<string, string> escapedData = new();
@@ -131,6 +135,13 @@ namespace Xeon.IO
             }
         }
 
+        private string Restore(string text, params string[] escapeTargets)
+        {
+            foreach (var escapeTarget in escapeTargets)
+                text = Restore(text, escapeTarget);
+            return text;
+        }
+
         private string Restore(string text, string escapeTarget)
         {
             while(true)
@@ -153,13 +164,12 @@ namespace Xeon.IO
         private void SetValue<T>(Type type, string memberName, T instance, string value)
         {
             var fieldInfo = type.GetField(memberName, ProperyFlags);
-            value = Restore(value, "list");
-            value = Restore(value, "object");
-            value = Restore(value, "vector");
-            value = Restore(value, "string");
+            if (VectorTypes.Contains(fieldInfo.FieldType))
+                value = Restore(value, "vector");
             if (fieldInfo.FieldType.GetInterface(nameof(ICsvSupport)) != null)
             {
                 var data = (ICsvSupport)Activator.CreateInstance(fieldInfo.FieldType);
+                value = Restore(value, "list", "object", "vector", "string");
                 data.FromCsv(value);
                 fieldInfo.SetValue(instance, data);
             }
@@ -170,9 +180,15 @@ namespace Xeon.IO
             else if (fieldInfo.FieldType == typeof(bool) && bool.TryParse(value, out var boolValue))
                 fieldInfo.SetValue(instance, boolValue);
             else if (fieldInfo.FieldType == typeof(string))
+            {
+                value = Restore(value, "string");
                 fieldInfo.SetValue(instance, value.FromCsv());
+            }
             else if (fieldInfo.FieldType.IsGenericType && fieldInfo.FieldType.GetGenericTypeDefinition() == typeof(List<>))
+            {
+                value = Restore(value, "list");
                 SetArrayValue(fieldInfo, instance, value);
+            }
             else if (fieldInfo.FieldType.IsEnum)
                 fieldInfo.SetValue(instance, Enum.Parse(fieldInfo.FieldType, value));
             else if (fieldInfo.FieldType == typeof(Vector2))
@@ -185,6 +201,8 @@ namespace Xeon.IO
                 fieldInfo.SetValue(instance, value.ToVector3Int());
             else if (fieldInfo.FieldType == typeof(Vector4))
                 fieldInfo.SetValue(instance, value.ToVector4());
+            else if (fieldInfo.FieldType == typeof(Quaternion))
+                fieldInfo.SetValue(instance, value.ToQuaternion());
             else
                 throw new Exception($"{fieldInfo.FieldType} is not supported");
         }
@@ -197,7 +215,7 @@ namespace Xeon.IO
             var type = fieldInfo.FieldType.GenericTypeArguments[0];
             var splited = value.Split(",").Where(splited => !string.IsNullOrEmpty(splited)).ToList();
             for (var index = 0; index < splited.Count; index++)
-                splited[index] = Restore(splited[index], "string");
+                splited[index] = Restore(splited[index], "object", "vector", "string");
             if (type == typeof(int))
                 fieldInfo.SetValue(instance, splited.Select(data => int.Parse(data)).ToList());
             else if (type == typeof(float))

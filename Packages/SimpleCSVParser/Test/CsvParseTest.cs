@@ -28,22 +28,19 @@ public class CsvParseTest
 
         public override bool Equals(object obj)
         {
-            Debug.Log("test1");
             if (obj is not TestValue other)
                 return false;
             if (referenceIds.Count != other.referenceIds.Count) return false;
-            Debug.Log("test2");
 
             foreach (var (referenceId, index) in referenceIds.Select((referenceId, index) => (referenceId, index)))
                 if (referenceId != other.referenceIds[index]) return false;
-            Debug.Log("test3");
 
             if (positions.Count != other.positions.Count) return false;
-            Debug.Log("test4");
             foreach (var (position, index) in positions.Select((position, index) => (position, index)))
                 if (position != other.positions[index]) return false;
-            Debug.Log("test5");
-            Debug.Log($"{id == other.id && name == other.name && position == other.position}");
+
+            if (string.IsNullOrEmpty(name) && string.IsNullOrEmpty(other.name))
+                return id == other.id && position == other.position;
             return id == other.id && name == other.name && position == other.position;
         }
 
@@ -63,13 +60,7 @@ public class CsvParseTest
             tmp = CsvUtility.EscapeVector(tmp, escapedData);
             tmp = CsvUtility.EscapeList(tmp, escapedData);
             var splited = tmp.Split(",");
-            try
-            {
-                id = int.Parse(splited[0]);
-            } catch (Exception e)
-            {
-                Debug.LogError(splited[0]);
-            }
+            id = int.Parse(splited[0]);
             position = escapedData[splited[2]].ToVector3();
             var referenceIdList = escapedData[splited[3]].Trim('[', ']');
             if (string.IsNullOrEmpty(referenceIdList))
@@ -266,13 +257,6 @@ public class CsvParseTest
         Assert.That(obj.Count == actual.Count);
         foreach (var (data, index) in actual.Select((data, index) => (data, index)))
         {
-            Debug.Log(index);
-            if (data == null || obj[index] == null)
-            {
-                Debug.Log($"{data == null},{obj[index] == null}");
-                continue;
-            }
-            Debug.Log("test");
             Assert.That(data.Equals(obj[index]));
         }
     }

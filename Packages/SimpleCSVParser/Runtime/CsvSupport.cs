@@ -1,4 +1,4 @@
-using System;
+ï»¿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,7 +8,7 @@ namespace Xeon.IO
 {
     public class InvalidFormatException : Exception
     {
-        public override string Message => "ƒtƒH[ƒ}ƒbƒg‚ª³‚µ‚­‚ ‚è‚Ü‚¹‚ñ";
+        public override string Message => "ãƒ•ã‚©ãƒ¼ãƒãƒƒãƒˆãŒæ­£ã—ãã‚ã‚Šã¾ã›ã‚“";
     }
     public static class CsvSupport
     {
