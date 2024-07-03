@@ -93,7 +93,7 @@ public class InterfaceTest
             new TestData(1, new TestValue(-1.2f, 42f, 20.1f, 3.54f)),
             new TestData(10, new TestValue(1, 1, 1, 1))
         };
-        var actual = CsvParser.ToCSV(data, ",");
+        var actual = CsvParser.ToCSV(data);
         var expect = @"id,value
 1,{-1.2,42,20.1,3.54}
 10,{1,1,1,1}
@@ -108,7 +108,7 @@ public class InterfaceTest
 1,{-1.2,42,20.1,3.54}
 10,{1,1,1,1}
 ";
-        var data = CsvParser.Parse<TestData>(csv, ",");
+        var data = CsvParser.Parse<TestData>(csv);
         Assert.That(data[0].Equals(new TestData(1, new TestValue(-1.2f, 42f, 20.1f, 3.54f))));
         Assert.That(data[1].Equals(new TestData(10, new TestValue(1, 1, 1, 1))));
 

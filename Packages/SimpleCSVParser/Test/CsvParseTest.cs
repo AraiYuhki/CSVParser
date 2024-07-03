@@ -19,7 +19,6 @@ public class CsvParseTest
 
     private class TestValue : ICsvSupport
     {
-        public static Regex EscapeRegex => new Regex(@"({{.+}})");
         public int id;
         public string name;
         public Vector3 position = Vector3.zero;
@@ -174,7 +173,7 @@ public class CsvParseTest
             vector4Value = new Vector4(1.1f, 2.2f, 3.3f, 4),
             enumValue = TestEnum.Two
         };
-        var csv = CsvParser.ToCSV(new List<TestData>() { testData }, ",");
+        var csv = CsvParser.ToCSV(new List<TestData>() { testData });
         var expect = @"int_value,float_value,string_value,bool_value,vector2_value,vector2int_value,vector3_value,vector3int_value,vector4_value,enum_value,private_int_value
 10,123.45,""abcdefg"",False,(10,10.5),(0,-1),(1.1,2.2,3.3),(1,1,1),(1.1,2.2,3.3,4),Two,12
 ";
@@ -186,7 +185,7 @@ public class CsvParseTest
     {
         var path = Application.dataPath.Replace("Assets", "");
         path = Path.Combine(path, "Packages/SimpleCSVParser/Test/TestData/Test.csv");
-        var obj = CsvParser.ParseFile<TestData>(path, ",");
+        var obj = CsvParser.ParseFile<TestData>(path);
         Debug.Log(obj.Count);
     }
 
@@ -196,7 +195,7 @@ public class CsvParseTest
         var csv = @"int_value,float_value,string_value,bool_value,vector2_value,vector2int_value,vector3_value,vector3int_value,vector4_value,enum_value,private_int_value
 10,123.45,""abcdefg"",False,(10,10.5),(0,-1),(1.1,2.2,3.3),(1,1,1),(1.1,2.2,3.3,4),Two,12
 ";
-        var obj = CsvParser.Parse<TestData>(csv, ",");
+        var obj = CsvParser.Parse<TestData>(csv);
         Debug.Log(obj.Count);
         Assert.That(obj.Count == 1);
         var data = obj.First();
@@ -251,9 +250,9 @@ public class CsvParseTest
 [""array1,array2"",""test""],{10,""test,test2"",(1.00, 2.00, 3.00),[2,4,6,8],[]}
 [],{0,"""",(0.00, 0.00, 0.00),[],[(1.00, 1.00, 1.00),(0.00, 0.00, 0.00),(0.00, 0.00, 1.00)]}
 ";
-        var csv = CsvParser.ToCSV(obj, ",");
+        var csv = CsvParser.ToCSV(obj);
         Assert.That(csv == csvExpect);
-        var actual = CsvParser.Parse<TestData2>(csv, ",");
+        var actual = CsvParser.Parse<TestData2>(csv);
         Assert.That(obj.Count == actual.Count);
         foreach (var (data, index) in actual.Select((data, index) => (data, index)))
         {

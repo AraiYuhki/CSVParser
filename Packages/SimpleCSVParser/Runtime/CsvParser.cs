@@ -16,11 +16,19 @@ namespace Xeon.IO
             typeof(Vector2), typeof(Vector3), typeof(Vector4),
             typeof(Vector2Int), typeof(Vector3Int), typeof(Quaternion)
         };
+
+        private static string defaultSeparator = ",";
         private string csv = null;
         private string separator = null;
         private Dictionary<string, string> escapedData = new();
 
+        private CsvParser(string csv)
+            => Initialize(csv, defaultSeparator);
+
         private CsvParser(string csv, string separator)
+            => Initialize(csv, separator);
+
+        private void Initialize(string csv, string separator)
         {
             this.csv = csv.Replace("\r\n", "\n").Replace("\r", "\n");
             this.separator = separator;
@@ -28,15 +36,19 @@ namespace Xeon.IO
             this.csv = csv;
         }
 
-        public string GetResult() => csv;
+        public void SetDefaultSeparator(string separator)
+            => defaultSeparator = separator;
 
-        public static List<T> Parse<T>(string csv, string separator = "\t") where T : CsvData, new()
+        public static List<T> Parse<T>(string csv) where T : CsvData, new()
+            => new CsvParser(csv).Parse<T>();
+        public static List<T> Parse<T>(string csv, string separator) where T : CsvData, new()
+            => new CsvParser(csv, separator).Parse<T>();
+
+        public static List<T> ParseFile<T>(string path) where T : CsvData, new()
         {
-            return new CsvParser(csv, separator).Parse<T>();
+            return ParseFile<T>(path, defaultSeparator);
         }
-
-
-        public static List<T> ParseFile<T>(string path, string separator = "\t") where T : CsvData, new()
+        public static List<T> ParseFile<T>(string path, string separator) where T : CsvData, new()
         {
             var encoding = EncodeHelper.GetJpEncoding(path);
             using (var reader = new StreamReader(path, encoding))
@@ -230,7 +242,10 @@ namespace Xeon.IO
                 throw new InvalidCastException("This type's List is not support");
         }
 
-        public static string ToCSV<T>(List<T> data, string separator = "\t")
+        public static string ToCSV<T>(List<T> data)
+            => ToCSV<T>(data, defaultSeparator);
+
+        public static string ToCSV<T>(List<T> data, string separator)
         {
             var builder = new StringBuilder();
             (var attributes, var members) = GetProperties<T>();
