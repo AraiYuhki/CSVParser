@@ -23,41 +23,81 @@ public class CsvParseTest
         public int id;
         public string name;
         public Vector3 position = Vector3.zero;
+        public List<int> referenceIds = new();
+        public List<Vector3> positions = new();
 
         public override bool Equals(object obj)
         {
+            Debug.Log("test1");
             if (obj is not TestValue other)
                 return false;
-            if (string.IsNullOrEmpty(name) && string.IsNullOrEmpty(other.name))
-                return id == other.id;
+            if (referenceIds.Count != other.referenceIds.Count) return false;
+            Debug.Log("test2");
+
+            foreach (var (referenceId, index) in referenceIds.Select((referenceId, index) => (referenceId, index)))
+                if (referenceId != other.referenceIds[index]) return false;
+            Debug.Log("test3");
+
+            if (positions.Count != other.positions.Count) return false;
+            Debug.Log("test4");
+            foreach (var (position, index) in positions.Select((position, index) => (position, index)))
+                if (position != other.positions[index]) return false;
+            Debug.Log("test5");
+            Debug.Log($"{id == other.id && name == other.name && position == other.position}");
             return id == other.id && name == other.name && position == other.position;
         }
 
         public string ToCsv(string separator = ",")
         {
             var name = $"\"{this.name}\"";
-            return $"{{{string.Join(separator, id, name, position)}}}";
+            var referenceIdsText = $"[{string.Join(separator, referenceIds)}]";
+            var positionsText = $"[{string.Join(separator, positions)}]";
+            return $"{{{string.Join(separator, id, name, position, referenceIdsText, positionsText)}}}";
         }
+
         public void FromCsv(string csv)
         {
             var tmp = csv.Trim('{', '}');
-            var match = Regex.Match(tmp, @"(\([\d\s\.\,\-]+\))");
-            if (!match.Success)
-                throw new InvalidDataException($"position param is ignore format. {csv}");
-            
-            tmp = tmp.Replace($",{match.Value}", "");
+            name = EscapeName(ref tmp);
+            var escapedData = new Dictionary<string, string>();
+            tmp = CsvUtility.EscapeVector(tmp, escapedData);
+            tmp = CsvUtility.EscapeList(tmp, escapedData);
+            var splited = tmp.Split(",");
+            try
+            {
+                id = int.Parse(splited[0]);
+            } catch (Exception e)
+            {
+                Debug.LogError(splited[0]);
+            }
+            position = escapedData[splited[2]].ToVector3();
+            var referenceIdList = escapedData[splited[3]].Trim('[', ']');
+            if (string.IsNullOrEmpty(referenceIdList))
+                referenceIds = new();
+            else
+                referenceIds = referenceIdList.Split(',').Select(text => int.Parse(text)).ToList();
 
-            var values = match.Value.Trim('(', ')').Split(',');
-            position = new Vector3(float.Parse(values[0]), float.Parse(values[1]), float.Parse(values[2]));
-
-            var splited = tmp.Split(',');
-            id = int.Parse(splited[0]);
-            name = string.Join(",", splited.Skip(1).Select(text => text.Trim('"')));
+            var list = escapedData[splited[4]].Trim('[', ']');
+            if (string.IsNullOrEmpty(list))
+            {
+                positions = new();
+                return;
+            }
+            positions = list.Split(',').Select(text => escapedData[text].ToVector3()).ToList();
         }
 
         public override string ToString()
         {
-            return $"{id}, {name}";
+            return $"{id}, {name}, {string.Join(',', referenceIds)}, {string.Join(',', positions)}";
+        }
+
+        private static string EscapeName(ref string csv)
+        {
+            var startIndex = csv.IndexOf('"');
+            var endIndex = csv.LastIndexOf('"');
+            var name = csv.Substring(startIndex, endIndex - startIndex + 1);
+            csv = csv.Replace(name, "<escaped>");
+            return name.Trim('"');
         }
     }
 
@@ -122,7 +162,7 @@ public class CsvParseTest
         public override string ToString()
         {
             var list = string.Join(",", listValue);
-            var classText = $"{classValue.id}::{classValue.name}";
+            var classText = $"{classValue.ToString()}";
             return $"listValue:{list}, classValue:{classText}";
         }
     }
@@ -187,24 +227,38 @@ public class CsvParseTest
         var obj = new List<TestData2>(){
             new TestData2() {
                 listValue = new() { "abd", "xeon", "tesst" },
-                classValue = new TestValue() { id = -1, name = "TestValue" , position = new Vector3(10.2f, -20.3f, 0) },
+                classValue = new TestValue() {
+                    id = -1,
+                    name = "TestValue" ,
+                    position = new Vector3(10.2f, -20.3f, 0),
+                    referenceIds = new List<int>(){ 1, 2, 3, 4, 5 },
+                    positions = new (){ new Vector3(1, 0, 0), new Vector3(2, 0, 0), new Vector3(0, 0, 1) }
+                },
             },
             new TestData2()
             {
                 listValue = new(){"array1,array2", "test"},
-                classValue = new TestValue(){id = 10, name = "test,test2", position = new Vector3(1f, 2f, 3f) }
+                classValue = new TestValue(){ 
+                    id = 10,
+                    name = "test,test2",
+                    position = new Vector3(1f, 2f, 3f),
+                    referenceIds = new (){ 2, 4, 6, 8},
+                }
             },
             new TestData2()
             {
                 listValue = new(),
                 classValue = new TestValue()
+                {
+                    positions = new(){ Vector3.one, Vector3.zero, Vector3.forward },
+                }
             }
         };
 
         var csvExpect = @"list_value,class_value
-[""abd"",""xeon"",""tesst""],{-1,""TestValue"",(10.20, -20.30, 0.00)}
-[""array1,array2"",""test""],{10,""test,test2"",(1.00, 2.00, 3.00)}
-[],{0,"""",(0.00, 0.00, 0.00)}
+[""abd"",""xeon"",""tesst""],{-1,""TestValue"",(10.20, -20.30, 0.00),[1,2,3,4,5],[(1.00, 0.00, 0.00),(2.00, 0.00, 0.00),(0.00, 0.00, 1.00)]}
+[""array1,array2"",""test""],{10,""test,test2"",(1.00, 2.00, 3.00),[2,4,6,8],[]}
+[],{0,"""",(0.00, 0.00, 0.00),[],[(1.00, 1.00, 1.00),(0.00, 0.00, 0.00),(0.00, 0.00, 1.00)]}
 ";
         var csv = CsvParser.ToCSV(obj, ",");
         Assert.That(csv == csvExpect);
@@ -212,8 +266,13 @@ public class CsvParseTest
         Assert.That(obj.Count == actual.Count);
         foreach (var (data, index) in actual.Select((data, index) => (data, index)))
         {
+            Debug.Log(index);
             if (data == null || obj[index] == null)
+            {
+                Debug.Log($"{data == null},{obj[index] == null}");
                 continue;
+            }
+            Debug.Log("test");
             Assert.That(data.Equals(obj[index]));
         }
     }

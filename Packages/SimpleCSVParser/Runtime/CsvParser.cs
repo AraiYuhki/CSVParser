@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace Xeon.IO
@@ -12,32 +11,6 @@ namespace Xeon.IO
     public class CsvParser
     {
         private const BindingFlags ProperyFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
-
-        private static readonly Regex StringRegex = new Regex("(\".+\")");
-        private static readonly Regex VectorRegex = new Regex(@"(\([\d\.\,\-]+\))\,");
-        private static readonly Regex ListRegex = new Regex(@"\[(.+)\]");
-        private static readonly Regex ObjectRegex = new Regex(@"{(.+)}");
-        private static Dictionary<Regex, string> escapeRegexs = new()
-        {
-            { VectorRegex , "vector" },
-            { ListRegex , "list" },
-            { ObjectRegex, "object" },
-        };
-
-        public static void AddEscapeRegex(string name, Regex regex)
-        {
-            escapeRegexs.Remove(regex);
-            escapeRegexs.Add(regex, name);
-        }
-
-        public static void RemoveEscapeRegex(Regex regex) => escapeRegexs.Remove(regex);
-
-        public static void ResetEscapeRegex()
-        {
-            escapeRegexs.Clear(); ;
-            AddEscapeRegex("vector", VectorRegex);
-            AddEscapeRegex("list", ListRegex);
-        }
 
         private string csv = null;
         private string separator = null;
@@ -47,58 +20,11 @@ namespace Xeon.IO
         {
             this.csv = csv.Replace("\r\n", "\n").Replace("\r", "\n");
             this.separator = separator;
-            EscapeString();
-            foreach (var (regex, name) in escapeRegexs)
-                Escape(regex, $"<escaped {name}>{{0}}</escaped {name}>");
+            csv = CsvUtility.Escape(csv, escapedData);
+            this.csv = csv;
         }
 
         public string GetResult() => csv;
-        public Dictionary<string, string> GetEscapedData() => escapedData;
-
-        private void Escape(Regex regex, string replaceFormat)
-        {
-            var matchData = new Dictionary<string, string>();
-            foreach (var (match, index) in regex.Matches(csv).Select((match, index) => (match, index)))
-            {
-                var matchText = match.Groups[1].Value;
-                if (escapedData.ContainsKey(matchText) || matchData.ContainsKey(matchText)) continue;
-                matchData.Add(matchText, string.Format(replaceFormat, index));
-            }
-            foreach (var (before, after) in matchData)
-            {
-                csv = csv.Replace(before, after);
-                escapedData.Add(after, before);
-            }
-        }
-
-        private void EscapeString()
-        {
-            var replaceTexts = new List<string>();
-            var startIndex = -1;
-            for (var index = 0; index < csv.Length; index++)
-            {
-                if (startIndex < 0)
-                {
-                    if (csv[index] != '"') continue;
-                    startIndex = index;
-                    continue;
-                }
-                if (csv[index] != '"') continue;
-                var endIndex = index + 1;
-                var target = csv[startIndex..endIndex];
-                var escapeIndex = replaceTexts.IndexOf(target);
-                if (escapeIndex < 0)
-                {
-                    escapeIndex = escapedData.Count;
-                    replaceTexts.Add(target);
-                }
-                var replaceText = $"<escaped string>{escapeIndex}</escaped string>";
-                csv = csv.Replace(target, replaceText);
-                if (!escapedData.ContainsKey(replaceText))
-                    escapedData.Add(replaceText, target);
-                startIndex = -1;
-            }
-        }
 
         public static List<T> Parse<T>(string csv, string separator = "\t") where T : CsvData, new()
         {
@@ -133,7 +59,7 @@ namespace Xeon.IO
                     isFirst = false;
                     continue;
                 }
-                var parsed = headers.Select((key, index) => (key, columns[index])).ToDictionary(pair => pair.key, pair => pair.Item2);
+                var parsed = headers.Select((key, index) => (key, Restore(columns[index], "string"))).ToDictionary(pair => pair.key, pair => pair.Item2);
                 var instance = CreateInstance<T>(attributes, members, type, parsed);
                 result.Add(instance);
             }
@@ -227,14 +153,14 @@ namespace Xeon.IO
         private void SetValue<T>(Type type, string memberName, T instance, string value)
         {
             var fieldInfo = type.GetField(memberName, ProperyFlags);
-            value = Restore(value, "string");
+            value = Restore(value, "list");
             value = Restore(value, "object");
             value = Restore(value, "vector");
-            value = Restore(value, "list");
+            value = Restore(value, "string");
             if (fieldInfo.FieldType.GetInterface(nameof(ICsvSupport)) != null)
             {
                 var data = (ICsvSupport)Activator.CreateInstance(fieldInfo.FieldType);
-                data.FromCsv(Restore(value, "string"));
+                data.FromCsv(value);
                 fieldInfo.SetValue(instance, data);
             }
             else if (fieldInfo.FieldType == typeof(int) && int.TryParse(value, out var intValue))
