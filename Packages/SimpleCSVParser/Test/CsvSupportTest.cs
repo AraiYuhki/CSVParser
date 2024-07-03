@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using System.Collections.Generic;
 using UnityEngine;
 using Xeon.IO;
 
@@ -55,5 +56,28 @@ public class CsvSupportTest
         Assert.That("(1,2,3,4.4)".ToVector4() == new Vector4(1f, 2f, 3f, 4.4f));
         Assert.That("1.2,3,4,5".ToVector4() == new Vector4(1.2f, 3f, 4f, 5f));
         Assert.Throws<InvalidFormatException>(() => "(1,2,3)".ToVector4());
+    }
+
+    [Test]
+    public void QuaternionTest()
+    {
+        var quaternion = Quaternion.identity;
+        Assert.That(quaternion.ToCsv() == "(0,0,0,1)");
+        Assert.That("(1,2,3,4.4)".ToQuaternion() == new Quaternion(1f, 2f, 3f, 4.4f));
+        Assert.That("1.2,3,4,5".ToQuaternion() == new Quaternion(1.2f, 3f, 4f, 5f));
+        Assert.Throws<InvalidFormatException>(() => "(3,2,1)".ToQuaternion());
+    }
+
+    [Test]
+    public void ListTest()
+    {
+        var stringList = new List<string>() { "abc", "def", "123" };
+        Assert.That(stringList.ToCsv() == "[\"abc\",\"def\",\"123\"]");
+
+        var intList = new List<int>() { 123, 456, 1000 };
+        Assert.That(intList.ToCsv() == "[123,456,1000]");
+
+        var floatList = new List<float>() { 1.1f, 2.2f, 3f };
+        Assert.That(floatList.ToCsv() == "[1.1,2.2,3]");
     }
 }

@@ -1,11 +1,9 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace Xeon.IO
@@ -13,10 +11,11 @@ namespace Xeon.IO
     public class CsvParser
     {
         private const BindingFlags ProperyFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
-
-        private static readonly Regex StringRegex = new Regex("(\".+\")");
-        private static readonly Regex VectorRegex = new Regex(@"(\([\d\.\,\-]+\))\,");
-
+        private static readonly Type[] VectorTypes = new Type[]
+        {
+            typeof(Vector2), typeof(Vector3), typeof(Vector4),
+            typeof(Vector2Int), typeof(Vector3Int), typeof(Quaternion)
+        };
         private string csv = null;
         private string separator = null;
         private Dictionary<string, string> escapedData = new();
@@ -25,29 +24,11 @@ namespace Xeon.IO
         {
             this.csv = csv.Replace("\r\n", "\n").Replace("\r", "\n");
             this.separator = separator;
-            Escape(StringRegex, "<escaped string>{0}</escaped string>");
-            Escape(VectorRegex, "<escaped vector>{0}</escaped string>");
+            csv = CsvUtility.Escape(csv, escapedData);
+            this.csv = csv;
         }
 
         public string GetResult() => csv;
-        public Dictionary<string, string> GetEscapedData() => escapedData;
-
-        private void Escape(Regex regex, string replaceFormat)
-        {
-            var matchData = new Dictionary<string, string>();
-            foreach (var (match, index) in regex.Matches(csv).Select((match, index) => (match, index)))
-            {
-                var matchText = match.Groups[1].Value;
-                if (escapedData.ContainsKey(matchText) || matchData.ContainsKey(matchText)) continue;
-                matchData.Add(matchText, string.Format(replaceFormat, index));
-            }
-            foreach (var (before, after) in matchData)
-            {
-                csv = csv.Replace(before, after);
-                escapedData.Add(after, before);
-            }
-            Debug.Log(csv);
-        }
 
         public static List<T> Parse<T>(string csv, string separator = "\t") where T : CsvData, new()
         {
@@ -82,7 +63,7 @@ namespace Xeon.IO
                     isFirst = false;
                     continue;
                 }
-                var parsed = headers.Select((key, index) => (key, columns[index])).ToDictionary(pair => pair.key, pair => pair.Item2);
+                var parsed = headers.Select((key, index) => (key, Restore(columns[index], "string"))).ToDictionary(pair => pair.key, pair => pair.Item2);
                 var instance = CreateInstance<T>(attributes, members, type, parsed);
                 result.Add(instance);
             }
@@ -113,13 +94,15 @@ namespace Xeon.IO
             foreach (var (key, value) in row)
             {
                 var text = value;
-                if (escapedData.ContainsKey(text)) text = escapedData[text];
                 if (!attributes.ContainsKey(key) || !members.ContainsKey(key)) continue;
                 var member = members[key];
                 try
                 {
                     if (member.MemberType == MemberTypes.Property)
+                    {
+                        text = RestoreEscape(text);
                         type.GetProperty(member.Name).SetValue(instance, text);
+                    }
                     else if (member.MemberType == MemberTypes.Field)
                         SetValue(type, member.Name, instance, text);
                     else
@@ -134,19 +117,78 @@ namespace Xeon.IO
             return instance;
         }
 
-        private static void SetValue<T>(Type type, string memberName, T instance, string value)
+        private string RestoreEscape(string text)
+        {
+            while(true)
+            {
+                var isReplaced = false;
+                foreach (var (escaped, origin) in escapedData)
+                {
+                    if (text.Contains(escaped))
+                    {
+                        text = text.Replace(escaped, origin);
+                        isReplaced = true;
+                    }
+                }
+                if (!isReplaced)
+                    return text;
+            }
+        }
+
+        private string Restore(string text, params string[] escapeTargets)
+        {
+            foreach (var escapeTarget in escapeTargets)
+                text = Restore(text, escapeTarget);
+            return text;
+        }
+
+        private string Restore(string text, string escapeTarget)
+        {
+            while(true)
+            {
+                var isReplaced = false;
+                foreach (var (escaped, origin) in escapedData)
+                {
+                    if (!escaped.Contains(escapeTarget)) continue;
+                    if (text.Contains(escaped))
+                    {
+                        text = text.Replace(escaped, origin);
+                        isReplaced = true;
+                    }
+                }
+                if (!isReplaced)
+                    return text;
+            }
+        }
+
+        private void SetValue<T>(Type type, string memberName, T instance, string value)
         {
             var fieldInfo = type.GetField(memberName, ProperyFlags);
-            if (fieldInfo.FieldType == typeof(int) && int.TryParse(value, out var intValue))
+            if (VectorTypes.Contains(fieldInfo.FieldType))
+                value = Restore(value, "vector");
+            if (fieldInfo.FieldType.GetInterface(nameof(ICsvSupport)) != null)
+            {
+                var data = (ICsvSupport)Activator.CreateInstance(fieldInfo.FieldType);
+                value = Restore(value, "list", "object", "vector", "string");
+                data.FromCsv(value);
+                fieldInfo.SetValue(instance, data);
+            }
+            else if (fieldInfo.FieldType == typeof(int) && int.TryParse(value, out var intValue))
                 fieldInfo.SetValue(instance, intValue);
             else if (fieldInfo.FieldType == typeof(float) && float.TryParse(value, out var floatValue))
                 fieldInfo.SetValue(instance, floatValue);
             else if (fieldInfo.FieldType == typeof(bool) && bool.TryParse(value, out var boolValue))
                 fieldInfo.SetValue(instance, boolValue);
             else if (fieldInfo.FieldType == typeof(string))
-                fieldInfo.SetValue(instance, value.Trim('"'));
+            {
+                value = Restore(value, "string");
+                fieldInfo.SetValue(instance, value.FromCsv());
+            }
             else if (fieldInfo.FieldType.IsGenericType && fieldInfo.FieldType.GetGenericTypeDefinition() == typeof(List<>))
+            {
+                value = Restore(value, "list");
                 SetArrayValue(fieldInfo, instance, value);
+            }
             else if (fieldInfo.FieldType.IsEnum)
                 fieldInfo.SetValue(instance, Enum.Parse(fieldInfo.FieldType, value));
             else if (fieldInfo.FieldType == typeof(Vector2))
@@ -159,16 +201,21 @@ namespace Xeon.IO
                 fieldInfo.SetValue(instance, value.ToVector3Int());
             else if (fieldInfo.FieldType == typeof(Vector4))
                 fieldInfo.SetValue(instance, value.ToVector4());
+            else if (fieldInfo.FieldType == typeof(Quaternion))
+                fieldInfo.SetValue(instance, value.ToQuaternion());
             else
                 throw new Exception($"{fieldInfo.FieldType} is not supported");
         }
 
-        private static void SetArrayValue<T>(FieldInfo fieldInfo, T instance, string value)
+        private void SetArrayValue<T>(FieldInfo fieldInfo, T instance, string value)
         {
+            value = value.Trim('[', ']');
             if (fieldInfo.FieldType.GenericTypeArguments.Length > 1)
                 throw new InvalidCastException("Multi generic arguments type is not support");
             var type = fieldInfo.FieldType.GenericTypeArguments[0];
-            var splited = value.Split(",").Where(splited => !string.IsNullOrEmpty(splited));
+            var splited = value.Split(",").Where(splited => !string.IsNullOrEmpty(splited)).ToList();
+            for (var index = 0; index < splited.Count; index++)
+                splited[index] = Restore(splited[index], "object", "vector", "string");
             if (type == typeof(int))
                 fieldInfo.SetValue(instance, splited.Select(data => int.Parse(data)).ToList());
             else if (type == typeof(float))
@@ -176,7 +223,7 @@ namespace Xeon.IO
             else if (type == typeof(bool))
                 fieldInfo.SetValue(instance, splited.Select(data => bool.Parse(data)).ToList());
             else if (type == typeof(string))
-                fieldInfo.SetValue(instance, splited.Select(data => data.Trim('"')).ToList());
+                fieldInfo.SetValue(instance, splited.Select(data => data.FromCsv()).ToList());
             else if (type.IsEnum)
                 fieldInfo.SetValue(instance, splited.Select(data => Enum.Parse(type, data)).ToList());
             else
@@ -201,37 +248,11 @@ namespace Xeon.IO
                         value = type.GetField(member.Name, ProperyFlags).GetValue(row);
                     else
                         continue;
-                    values.Add(ToString(value));
+                    values.Add(CsvSupport.ToString(value));
                 }
                 builder.AppendLine(string.Join(separator, values));
             }
             return builder.ToString();
-        }
-
-        private static string ToString(object value, string separator = ",")
-        {
-            if (value is string)
-                return $"\"{value}\"";
-            if (value is Vector2 vector2)
-                return vector2.ToCsv(separator);
-            if (value is Vector3 vector3)
-                return vector3.ToCsv(separator);
-            if (value is Vector2Int vector2Int)
-                return vector2Int.ToCsv(separator);
-            if (value is Vector3Int vector3Int)
-                return vector3Int.ToCsv(separator);
-            if (value is Vector4 vector4)
-                return vector4.ToCsv(separator);
-            if (value is Quaternion quaternion)
-                return quaternion.ToCsv(separator);
-            if (value is not string && value is IEnumerable enumerable)
-            {
-                var array = new List<object>();
-                foreach (var data in enumerable)
-                    array.Add(data);
-                return string.Join(separator, array.ToArray());
-            }
-            return value.ToString();
         }
     }
 }
