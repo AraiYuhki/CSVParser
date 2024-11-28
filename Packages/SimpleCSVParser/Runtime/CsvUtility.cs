@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Security;
 using System.Text.RegularExpressions;
 
 namespace Xeon.IO
@@ -7,6 +8,11 @@ namespace Xeon.IO
     public delegate string EscapeFunction(string csv, Dictionary<string, string> escapedData);
     public static class CsvUtility
     {
+        public static readonly Regex StringRegex = new Regex(@"("".*?"")");
+        public static readonly Regex ListRegex = new Regex(@"(\[.*?\])");
+        public static readonly Regex ObjectRegex = new Regex(@"({.*?})");
+        public static readonly Regex VectorRegex = new Regex(@"(\(.*?\))");
+
         private static List<EscapeFunction> EscapeFunctions = new()
         {
             EscapeString,
@@ -40,6 +46,40 @@ namespace Xeon.IO
             var result = csv;
             foreach (var function in EscapeFunctions)
                 result = function(result, escapedData);
+            return result;
+        }
+
+        public static string EscapeVectorRegex(string csv, Dictionary<string, string> escapedData)
+            => EscapeByRegex(VectorRegex, csv, escapedData, "vector");
+        public static string EscapeListRegex(string csv, Dictionary<string, string> escapedData)
+            => EscapeByRegex(ListRegex, csv, escapedData, "list");
+        public static string EscapeObjectRegex(string csv, Dictionary<string, string> escapedData)
+            => EscapeByRegex(ObjectRegex, csv, escapedData, "object");
+        public static string EscapeStringRegex(string csv, Dictionary<string, string> escapedData)
+            => EscapeByRegex(StringRegex, csv, escapedData, "string");
+
+        private static string EscapeByRegex(Regex regex, string csv, Dictionary<string, string> escapedData, string name)
+        {
+            var result = csv;
+            var replaceTexts = new List<string>();
+            while(regex.IsMatch(result))
+            {
+                foreach (Match match in regex.Matches(result))
+                {
+                    if (match.Groups.Count < 2) continue;
+                    var value = match.Groups[1].Value;
+                    var escapeIndex = replaceTexts.IndexOf(value);
+                    if (escapeIndex < 0)
+                    {
+                        escapeIndex = escapedData.Count;
+                        replaceTexts.Add(value);
+                    }
+                    var replaceText = $"<escaped {name}>{escapeIndex}</escaped {name}>";
+                    result = result.Replace(value, replaceText);
+                    if (!escapedData.ContainsKey(replaceText))
+                        escapedData.Add(replaceText, value);
+                }
+            }
             return result;
         }
 

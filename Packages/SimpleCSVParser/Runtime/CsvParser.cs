@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -30,7 +31,7 @@ namespace Xeon.IO
 
         private void Initialize(string csv, string separator)
         {
-            this.csv = csv.Replace("\r\n", "\n").Replace("\r", "\n");
+            csv = csv.Replace("\r\n", "\n").Replace("\r", "\n");
             this.separator = separator;
             csv = CsvUtility.Escape(csv, escapedData);
             this.csv = csv;
@@ -75,7 +76,16 @@ namespace Xeon.IO
                     isFirst = false;
                     continue;
                 }
-                var parsed = headers.Select((key, index) => (key, Restore(columns[index], "string"))).ToDictionary(pair => pair.key, pair => pair.Item2);
+                var parsed = new Dictionary<string, string>();
+                foreach (var (key, index) in headers.Select((key, index) => (key, index)))
+                {
+                    if (index >= headers.Count)
+                    {
+                        Debug.LogError(index);
+                        continue;
+                    }
+                    parsed[key] = Restore(columns[index], "string");
+                }
                 var instance = CreateInstance<T>(attributes, members, type, parsed);
                 result.Add(instance);
             }
@@ -237,7 +247,12 @@ namespace Xeon.IO
             else if (type == typeof(string))
                 fieldInfo.SetValue(instance, splited.Select(data => data.FromCsv()).ToList());
             else if (type.IsEnum)
-                fieldInfo.SetValue(instance, splited.Select(data => Enum.Parse(type, data)).ToList());
+            {
+                var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(type));
+                foreach (var text in splited)
+                    list.Add(Enum.Parse(type, text));
+                fieldInfo.SetValue(instance, list);
+            }
             else
                 throw new InvalidCastException("This type's List is not support");
         }
