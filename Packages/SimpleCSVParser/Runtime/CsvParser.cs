@@ -84,7 +84,15 @@ namespace Xeon.IO
                         Debug.LogError(index);
                         continue;
                     }
-                    parsed[key] = Restore(columns[index], "string");
+                    try
+                    {
+                        parsed[key] = index >= columns.Length ? string.Empty : Restore(columns[index], "string");
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogException(e);
+                        Debug.LogError($"{key} {index} {columns.Length}");
+                    }
                 }
                 var instance = CreateInstance<T>(attributes, members, type, parsed);
                 result.Add(instance);
