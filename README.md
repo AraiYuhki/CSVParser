@@ -1,4 +1,4 @@
 # CSVParser
 Unity向けCSVパーサー
 
-https://github.com/AraiYuhki/CSVPaser.git?path=Packages/SimpleCSVParser
+https://github.com/AraiYuhki/CSVParser.git?path=Packages/SimpleCSVParser
